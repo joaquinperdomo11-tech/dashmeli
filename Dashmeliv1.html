@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Ventas MELI</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- DataTables -->
+  <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+  <script src="https://code.jquery.com/jquery-3.7.0.min.js"></script>
+  <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+</head>
+<body class="bg-gray-100 font-sans text-gray-800">
+  <div class="container mx-auto p-6">
+    <h1 class="text-3xl font-bold mb-6 text-center">Dashboard Ventas MELI</h1>
+
+    <!-- Filtros -->
+    <div class="flex flex-wrap gap-4 mb-6 justify-center" id="filters">
+      <div>
+        <label class="block font-semibold">Mes</label>
+        <select id="monthFilter" class="border p-2 rounded w-40">
+          <option value="all">Todos</option>
+        </select>
+      </div>
+      <div>
+        <label class="block font-semibold">Tipo de Envío</label>
+        <select id="shippingFilter" class="border p-2 rounded w-48">
+          <option value="all">Todos</option>
+        </select>
+      </div>
+      <div>
+        <label class="block font-semibold">Medio de Pago</label>
+        <select id="paymentFilter" class="border p-2 rounded w-48">
+          <option value="all">Todos</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Gráficos -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+      <div class="bg-white p-4 rounded shadow">
+        <h2 class="text-xl font-semibold mb-4">Ventas por Mes</h2>
+        <canvas id="ventasMes"></canvas>
+      </div>
+      <div class="bg-white p-4 rounded shadow">
+        <h2 class="text-xl font-semibold mb-4">Costos por Mes</h2>
+        <canvas id="costosMes"></canvas>
+      </div>
+      <div class="bg-white p-4 rounded shadow md:col-span-2">
+        <h2 class="text-xl font-semibold mb-4">Productos más Vendidos</h2>
+        <canvas id="productosVendidos"></canvas>
+      </div>
+    </div>
+
+    <!-- Tabla de detalle -->
+    <div class="bg-white p-4 rounded shadow">
+      <h2 class="text-xl font-semibold mb-4">Detalle de Ventas</h2>
+      <table id="tablaVentas" class="display w-full">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Hora</th>
+            <th>Producto</th>
+            <th>Cantidad</th>
+            <th>Precio Unitario</th>
+            <th>Total</th>
+            <th>Comisión</th>
+            <th>Tipo Envío</th>
+            <th>Medio de Pago</th>
+            <th>Cuotas</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const SHEET_URL = "https://script.google.com/macros/s/AKfycbxgm38hrmrZ6UcD7-qDv-E0EDrgniLGgsR7Ms7chhlNOoxv4e7T8ieKcve5BDlHFTyzuw/exec";
+    let rawData = [];
+
+    async function fetchData() {
+      const res = await fetch(SHEET_URL);
+      rawData = await res.json();
+      initFilters();
+      renderTable();
+      renderCharts();
+    }
+
+    function initFilters() {
+      const monthSet = new Set();
+      const shippingSet = new Set();
+      const paymentSet = new Set();
+
+      rawData.forEach(r => {
+        if(r.Fecha) monthSet.add(r.Fecha.slice(3,5));
+        if(r["Tipo Envío"]) shippingSet.add(r["Tipo Envío"]);
+        if(r["Medio de Pago"]) paymentSet.add(r["Medio de Pago"]);
+      });
+
+      const monthFilter = document.getElementById("monthFilter");
+      monthSet.forEach(m => monthFilter.innerHTML += `<option value="${m}">${m}</option>`);
+
+      const shippingFilter = document.getElementById("shippingFilter");
+      shippingSet.forEach(s => shippingFilter.innerHTML += `<option value="${s}">${s}</option>`);
+
+      const paymentFilter = document.getElementById("paymentFilter");
+      paymentSet.forEach(p => paymentFilter.innerHTML += `<option value="${p}">${p}</option>`);
+
+      monthFilter.addEventListener("change", renderTable);
+      shippingFilter.addEventListener("change", renderTable);
+      paymentFilter.addEventListener("change", renderTable);
+    }
+
+    function getFilteredData() {
+      const month = document.getElementById("monthFilter").value;
+      const shipping = document.getElementById("shippingFilter").value;
+      const payment = document.getElementById("paymentFilter").value;
+
+      return rawData.filter(r => 
+        (month === "all" || r.Fecha.slice(3,5) === month) &&
+        (shipping === "all" || r["Tipo Envío"] === shipping) &&
+        (payment === "all" || r["Medio de Pago"] === payment)
+      );
+    }
+
+    function renderTable() {
+      const filtered = getFilteredData();
+      const tbody = $("#tablaVentas tbody");
+      tbody.empty();
+
+      filtered.forEach(r => {
+        tbody.append(`<tr>
+          <td>${r.Fecha}</td>
+          <td>${r.Hora}</td>
+          <td>${r.Producto}</td>
+          <td>${r.Cantidad}</td>
+          <td>${r["Precio Unitario"]}</td>
+          <td>${r.Total}</td>
+          <td>${r.Comision}</td>
+          <td>${r["Tipo Envío"]}</td>
+          <td>${r["Medio de Pago"]}</td>
+          <td>${r.Cuotas}</td>
+        </tr>`);
+      });
+
+      $("#tablaVentas").DataTable();
+    }
+
+    function renderCharts() {
+      const filtered = getFilteredData();
+
+      // Ventas por mes
+      const ventasMap = {};
+      filtered.forEach(r => {
+        const month = r.Fecha.slice(3,5);
+        ventasMap[month] = (ventasMap[month]||0) + parseFloat(r.Total);
+      });
+
+      new Chart(document.getElementById("ventasMes"), {
+        type: 'bar',
+        data: {
+          labels: Object.keys(ventasMap),
+          datasets: [{ label: 'Ventas', data: Object.values(ventasMap), backgroundColor: 'rgba(75, 192, 192, 0.6)' }]
+        }
+      });
+
+      // Costos por mes
+      const costosMap = {};
+      filtered.forEach(r => {
+        const month = r.Fecha.slice(3,5);
+        const costo = parseFloat(r.Costo||0);
+        costosMap[month] = (costosMap[month]||0) + costo;
+      });
+
+      new Chart(document.getElementById("costosMes"), {
+        type: 'line',
+        data: {
+          labels: Object.keys(costosMap),
+          datasets: [{ label: 'Costos', data: Object.values(costosMap), borderColor: 'rgba(255,99,132,1)', fill:false }]
+        }
+      });
+
+      // Productos más vendidos
+      const prodMap = {};
+      filtered.forEach(r => {
+        prodMap[r.Producto] = (prodMap[r.Producto]||0) + parseInt(r.Cantidad);
+      });
+
+      new Chart(document.getElementById("productosVendidos"), {
+        type: 'bar',
+        data: {
+          labels: Object.keys(prodMap),
+          datasets: [{ label: 'Unidades vendidas', data: Object.values(prodMap), backgroundColor: 'rgba(153,102,255,0.6)' }]
+        }
+      });
+    }
+
+    fetchData();
+  </script>
+</body>
+</html>
